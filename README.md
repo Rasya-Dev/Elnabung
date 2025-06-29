@@ -1,2 +1,0 @@
-# Elnabung
-Nabung cihuy
