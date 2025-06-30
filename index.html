@@ -231,7 +231,25 @@
             font-size: 14px;
             margin-left: 8px;
         }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
+    
+    <!-- Tambahkan Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 </head>
 <body>
     <div class="container">
@@ -288,15 +306,30 @@
         
         <div class="transaction-history">
             <div style="font-size: 14px; color: #b0b0b0; margin-bottom: 8px;">Riwayat Transaksi</div>
-            <div id="transactions"></div>
+            <div id="transactions"><div class="loading"></div> Memuat data...</div>
         </div>
     </div>
 
     <script>
-        // Load data from localStorage
-        let total = localStorage.getItem('tabunganRasyaTotal') ? parseInt(localStorage.getItem('tabunganRasyaTotal')) : 0;
-        let target = localStorage.getItem('tabunganRasyaTarget') ? parseInt(localStorage.getItem('tabunganRasyaTarget')) : 0;
-        let transactions = localStorage.getItem('tabunganRasyaTransactions') ? JSON.parse(localStorage.getItem('tabunganRasyaTransactions')) : [];
+        // Konfigurasi Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyDv1q2z1Xh3J5Q6X7Y8Z9A0B1C2D3E4F5G",
+            authDomain: "tabungan-rasya.firebaseapp.com",
+            databaseURL: "https://tabungan-rasya-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "tabungan-rasya",
+            storageBucket: "tabungan-rasya.appspot.com",
+            messagingSenderId: "123456789012",
+            appId: "1:123456789012:web:abcdefghijklmnopqrstuv"
+        };
+
+        // Inisialisasi Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        // Variabel global
+        let total = 0;
+        let target = 0;
+        let transactions = [];
         
         // Update time
         function updateTime() {
@@ -306,31 +339,17 @@
             document.getElementById('current-time').textContent = `${hours}:${minutes}`;
         }
         
-        // Initialize UI
-        document.addEventListener('DOMContentLoaded', function() {
-            updateTime();
-            setInterval(updateTime, 60000);
-            
-            updateUI();
-            renderTransactions();
-            
-            if (target > 0) {
-                document.getElementById('progress-section').style.display = 'block';
-                updateProgress();
-            }
-        });
-        
+        // Format Rupiah
         function formatRupiah(angka) {
             return 'Rp' + angka.toLocaleString('id-ID');
         }
         
+        // Update UI
         function updateUI() {
             document.getElementById('total-tabungan').textContent = formatRupiah(total);
-            
-            // Save to localStorage
-            localStorage.setItem('tabunganRasyaTotal', total);
         }
         
+        // Update progress
         function updateProgress() {
             if (target <= 0) return;
             
@@ -362,22 +381,7 @@
             }
         }
         
-        function addTransaction(amount, type, note) {
-            const now = new Date();
-            const transaction = {
-                amount: amount,
-                type: type,
-                note: note || '',
-                date: now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-            };
-            
-            transactions.unshift(transaction);
-            if (transactions.length > 10) transactions = transactions.slice(0, 10);
-            
-            localStorage.setItem('tabunganRasyaTransactions', JSON.stringify(transactions));
-            renderTransactions();
-        }
-        
+        // Render transactions
         function renderTransactions() {
             const container = document.getElementById('transactions');
             container.innerHTML = '';
@@ -406,6 +410,7 @@
             });
         }
         
+        // Tambah tabungan
         function tambahTabungan() {
             const input = document.getElementById('nominal');
             const noteInput = document.getElementById('note');
@@ -417,20 +422,28 @@
             }
             
             const tambahan = nominal * 1000;
-            total += tambahan;
+            const now = new Date();
+            const newTransaction = {
+                amount: tambahan,
+                type: 'tambah',
+                note: noteInput.value || '',
+                date: now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+                timestamp: now.getTime()
+            };
             
-            addTransaction(tambahan, 'tambah', noteInput.value);
-            updateUI();
-            
-            if (target > 0) {
-                document.getElementById('progress-section').style.display = 'block';
-                updateProgress();
-            }
-            
-            input.value = '';
-            noteInput.value = '';
+            // Simpan ke Firebase
+            database.ref('transactions').push(newTransaction)
+                .then(() => {
+                    input.value = '';
+                    noteInput.value = '';
+                })
+                .catch(error => {
+                    console.error('Error saving transaction:', error);
+                    alert('Gagal menyimpan transaksi: ' + error.message);
+                });
         }
         
+        // Kurangi tabungan
         function kurangiTabungan() {
             const input = document.getElementById('nominal');
             const noteInput = document.getElementById('note');
@@ -448,19 +461,28 @@
                 return;
             }
             
-            total -= pengurangan;
+            const now = new Date();
+            const newTransaction = {
+                amount: pengurangan,
+                type: 'pakai',
+                note: noteInput.value || '',
+                date: now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+                timestamp: now.getTime()
+            };
             
-            addTransaction(pengurangan, 'pakai', noteInput.value);
-            updateUI();
-            
-            if (target > 0) {
-                updateProgress();
-            }
-            
-            input.value = '';
-            noteInput.value = '';
+            // Simpan ke Firebase
+            database.ref('transactions').push(newTransaction)
+                .then(() => {
+                    input.value = '';
+                    noteInput.value = '';
+                })
+                .catch(error => {
+                    console.error('Error saving transaction:', error);
+                    alert('Gagal menyimpan transaksi: ' + error.message);
+                });
         }
         
+        // Set target
         function setTarget() {
             const input = document.getElementById('target');
             const newTarget = parseInt(input.value);
@@ -470,34 +492,93 @@
                 return;
             }
             
-            target = newTarget;
-            localStorage.setItem('tabunganRasyaTarget', target);
-            
-            document.getElementById('progress-section').style.display = 'block';
-            updateProgress();
-            updateUI();
-            
-            alert('Target tabungan diset: ' + formatRupiah(target));
-            input.value = '';
+            // Simpan ke Firebase
+            database.ref('target').set(newTarget)
+                .then(() => {
+                    alert('Target tabungan diset: ' + formatRupiah(newTarget));
+                    input.value = '';
+                })
+                .catch(error => {
+                    console.error('Error setting target:', error);
+                    alert('Gagal menyimpan target: ' + error.message);
+                });
         }
         
+        // Reset tabungan
         function resetTabungan() {
             if (confirm('Apakah Anda yakin ingin mereset total tabungan ke 0?')) {
-                total = 0;
-                updateUI();
-                if (target > 0) {
-                    updateProgress();
-                }
+                // Reset semua transaksi di Firebase
+                database.ref('transactions').remove()
+                    .then(() => {
+                        // Reset total di Firebase
+                        return database.ref('total').set(0);
+                    })
+                    .catch(error => {
+                        console.error('Error resetting savings:', error);
+                        alert('Gagal mereset tabungan: ' + error.message);
+                    });
             }
         }
         
+        // Reset riwayat
         function resetRiwayat() {
             if (confirm('Apakah Anda yakin ingin menghapus semua riwayat transaksi?')) {
-                transactions = [];
-                localStorage.setItem('tabunganRasyaTransactions', JSON.stringify(transactions));
-                renderTransactions();
+                database.ref('transactions').remove()
+                    .catch(error => {
+                        console.error('Error resetting transactions:', error);
+                        alert('Gagal mereset riwayat: ' + error.message);
+                    });
             }
         }
+        
+        // Load data dari Firebase
+        function loadData() {
+            // Load total tabungan
+            database.ref('total').on('value', (snapshot) => {
+                total = snapshot.val() || 0;
+                updateUI();
+            });
+            
+            // Load target
+            database.ref('target').on('value', (snapshot) => {
+                target = snapshot.val() || 0;
+                if (target > 0) {
+                    document.getElementById('progress-section').style.display = 'block';
+                    updateProgress();
+                } else {
+                    document.getElementById('progress-section').style.display = 'none';
+                }
+            });
+            
+            // Load transaksi
+            database.ref('transactions').orderByChild('timestamp').limitToLast(10).on('value', (snapshot) => {
+                const transactionsData = [];
+                snapshot.forEach((childSnapshot) => {
+                    transactionsData.unshift(childSnapshot.val());
+                });
+                
+                transactions = transactionsData;
+                renderTransactions();
+                
+                // Hitung ulang total dari transaksi (untuk memastikan konsistensi)
+                const calculatedTotal = transactions.reduce((sum, trans) => {
+                    return trans.type === 'tambah' ? sum + trans.amount : sum - trans.amount;
+                }, 0);
+                
+                // Update total di Firebase jika berbeda
+                if (calculatedTotal !== total) {
+                    database.ref('total').set(calculatedTotal);
+                }
+            });
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            updateTime();
+            setInterval(updateTime, 60000);
+            
+            loadData();
+        });
     </script>
 </body>
-</html>
+    </html>
