@@ -253,16 +253,109 @@
             border-radius: 8px;
             margin: 10px 0;
         }
+        
+        #init-loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #121212;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        
+        #init-loading .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255,255,255,.1);
+            border-radius: 50%;
+            border-top-color: #4dabf7;
+            animation: spin 1s linear infinite;
+            margin-bottom: 16px;
+        }
     </style>
-    
-    <!-- Tambahkan Firebase SDK versi modular -->
-    <script type="module">
-        // Import the functions you need from the SDKs you need
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-        import { getDatabase, ref, set, push, onValue, off, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-analytics.js";
+</head>
+<body>
+    <div id="init-loading">
+        <div class="spinner"></div>
+        <div>Memuat aplikasi...</div>
+    </div>
 
-        // Your web app's Firebase configuration
+    <div class="container" style="display: none;">
+        <div class="header">
+            <div class="time" id="current-time">00:00</div>
+            <div class="status-bar">
+                <div class="status-icon" style="background: #20c997;"></div>
+                <div class="status-icon" style="background: #4dabf7;"></div>
+                <div class="status-icon" style="background: #fcc419;"></div>
+                <span class="battery">100%</span>
+            </div>
+        </div>
+        
+        <h1>Tabungan Rasya</h1>
+        <p class="subtitle">Kelola tabunganmu dengan bijak</p>
+        
+        <div class="input-group">
+            <label for="nominal">Jumlah Transaksi (x1000)</label>
+            <input type="number" id="nominal" placeholder="Contoh: 50 = Rp50.000">
+        </div>
+        
+        <div class="input-group">
+            <label for="note">Keterangan (Untuk apa/Dari siapa)</label>
+            <textarea id="note" placeholder="Contoh: Uang jajan dari Ibu"></textarea>
+        </div>
+        
+        <div class="button-group">
+            <button class="btn-primary" id="btn-tambah">Tambah</button>
+            <button class="btn-danger" id="btn-pakai">Pakai</button>
+        </div>
+        
+        <div class="input-group">
+            <label for="target">Target Tabungan (Rp)</label>
+            <input type="number" id="target" placeholder="Masukkan target">
+            <div class="button-group" style="margin-top: 8px;">
+                <button class="btn-primary" id="btn-set-target">Set Target</button>
+                <button class="btn-warning" id="btn-reset-tabungan">Reset Tabungan</button>
+                <button class="btn-secondary" id="btn-reset-riwayat">Reset Riwayat</button>
+            </div>
+        </div>
+        
+        <div class="result">
+            <div>Total Tabungan</div>
+            <div class="amount" id="total-tabungan">Rp0</div>
+            
+            <div id="progress-section" style="display: none;">
+                <div class="progress-container">
+                    <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+                </div>
+                <div id="progress-text" style="font-size: 12px; color: #a0a0a0;">0% dari target</div>
+                <div id="motivation" class="motivation"></div>
+            </div>
+        </div>
+        
+        <div class="transaction-history">
+            <div style="font-size: 14px; color: #b0b0b0; margin-bottom: 8px;">Riwayat Transaksi</div>
+            <div id="transactions"><div class="loading"></div> Memuat data...</div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+    <script>
+        // Variabel global
+        let total = 0;
+        let target = 0;
+        let transactions = [];
+        let dataLoaded = false;
+        let database;
+        
+        // Konfigurasi Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyCxatc-et4ANqcNhcSwbl1OLC7v3tZQkUA",
             authDomain: "nabung-rasya.firebaseapp.com",
@@ -273,17 +366,55 @@
             appId: "1:209454758711:web:4bbac9b7713e8d3025b8b2",
             measurementId: "G-2Y3M3XCNZK"
         };
-
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const analytics = getAnalytics(app);
-        const database = getDatabase(app);
-
-        // Variabel global
-        let total = 0;
-        let target = 0;
-        let transactions = [];
-        let dataLoaded = false;
+        
+        // Fungsi inisialisasi
+        function initApp() {
+            try {
+                // Initialize Firebase
+                const app = firebase.initializeApp(firebaseConfig);
+                database = firebase.database();
+                
+                // Setup event listeners
+                setupEventListeners();
+                
+                // Load data
+                loadData();
+                
+                // Update time
+                updateTime();
+                setInterval(updateTime, 60000);
+                
+                // Sembunyikan loading, tampilkan aplikasi
+                document.getElementById('init-loading').style.display = 'none';
+                document.querySelector('.container').style.display = 'block';
+                
+            } catch (error) {
+                console.error("Error inisialisasi:", error);
+                document.getElementById('init-loading').innerHTML = `
+                    <div style="color: white; text-align: center;">
+                        <h3>Terjadi Error</h3>
+                        <p>${error.message}</p>
+                        <button onclick="window.location.reload()" style="margin-top: 16px; padding: 8px 16px; background: #4dabf7; border: none; border-radius: 8px; color: white;">
+                            Coba Lagi
+                        </button>
+                    </div>
+                `;
+            }
+        }
+        
+        // Setup event listeners
+        function setupEventListeners() {
+            document.getElementById('btn-tambah').addEventListener('click', tambahTabungan);
+            document.getElementById('btn-pakai').addEventListener('click', kurangiTabungan);
+            document.getElementById('btn-set-target').addEventListener('click', setTarget);
+            document.getElementById('btn-reset-tabungan').addEventListener('click', resetTabungan);
+            document.getElementById('btn-reset-riwayat').addEventListener('click', resetRiwayat);
+            
+            // Deteksi koneksi online/offline
+            window.addEventListener('online', () => {
+                if (!dataLoaded) loadData();
+            });
+        }
         
         // Update time
         function updateTime() {
@@ -291,16 +422,23 @@
             const hours = now.getHours().toString().padStart(2, '0');
             const minutes = now.getMinutes().toString().padStart(2, '0');
             document.getElementById('current-time').textContent = `${hours}:${minutes}`;
+            
+            // Update battery (simulasi)
+            const batteryLevel = Math.min(100, Math.max(20, Math.floor(Math.random() * 100)));
+            document.querySelector('.battery').textContent = `${batteryLevel}%`;
         }
         
+        // Format Rupiah
         function formatRupiah(angka) {
             return 'Rp' + angka.toLocaleString('id-ID');
         }
         
+        // Update UI
         function updateUI() {
             document.getElementById('total-tabungan').textContent = formatRupiah(total);
         }
         
+        // Update progress
         function updateProgress() {
             if (target <= 0) return;
             
@@ -332,6 +470,7 @@
             }
         }
         
+        // Render transactions
         function renderTransactions() {
             const container = document.getElementById('transactions');
             container.innerHTML = '';
@@ -360,6 +499,7 @@
             });
         }
         
+        // Show error
         function showError(message) {
             const container = document.getElementById('transactions');
             container.innerHTML = `
@@ -385,8 +525,7 @@
             
             try {
                 // Load total tabungan
-                const totalRef = ref(database, 'total');
-                onValue(totalRef, (snapshot) => {
+                database.ref('total').on('value', (snapshot) => {
                     total = snapshot.val() || 0;
                     updateUI();
                 }, (error) => {
@@ -395,8 +534,7 @@
                 });
                 
                 // Load target
-                const targetRef = ref(database, 'target');
-                onValue(targetRef, (snapshot) => {
+                database.ref('target').on('value', (snapshot) => {
                     target = snapshot.val() || 0;
                     if (target > 0) {
                         document.getElementById('progress-section').style.display = 'block';
@@ -409,41 +547,44 @@
                 });
                 
                 // Load transaksi
-                const transactionsRef = ref(database, 'transactions');
-                onValue(transactionsRef, (snapshot) => {
-                    dataLoaded = true;
-                    clearTimeout(timeout);
-                    
-                    const transactionsData = [];
-                    snapshot.forEach((childSnapshot) => {
-                        transactionsData.unshift({
-                            id: childSnapshot.key,
-                            ...childSnapshot.val()
+                database.ref('transactions').orderByChild('timestamp').limitToLast(10).on('value', 
+                    (snapshot) => {
+                        dataLoaded = true;
+                        clearTimeout(timeout);
+                        
+                        const transactionsData = [];
+                        snapshot.forEach((childSnapshot) => {
+                            transactionsData.unshift({
+                                id: childSnapshot.key,
+                                ...childSnapshot.val()
+                            });
                         });
-                    });
-                    
-                    transactions = transactionsData;
-                    renderTransactions();
-                    
-                    // Hitung ulang total dari transaksi
-                    const calculatedTotal = transactions.reduce((sum, trans) => {
-                        return trans.type === 'tambah' ? sum + trans.amount : sum - trans.amount;
-                    }, 0);
-                    
-                    // Update total di Firebase jika berbeda
-                    if (calculatedTotal !== total) {
-                        set(ref(database, 'total'), calculatedTotal);
+                        
+                        transactions = transactionsData;
+                        renderTransactions();
+                        
+                        // Hitung ulang total dari transaksi
+                        const calculatedTotal = transactions.reduce((sum, trans) => {
+                            return trans.type === 'tambah' ? sum + trans.amount : sum - trans.amount;
+                        }, 0);
+                        
+                        // Update total di Firebase jika berbeda
+                        if (calculatedTotal !== total) {
+                            database.ref('total').set(calculatedTotal);
+                        }
+                    }, 
+                    (error) => {
+                        console.error("Error load transactions:", error);
+                        showError("Gagal memuat riwayat transaksi.");
                     }
-                }, (error) => {
-                    console.error("Error load transactions:", error);
-                    showError("Gagal memuat riwayat transaksi.");
-                });
+                );
             } catch (error) {
                 console.error("Error in loadData:", error);
                 showError("Terjadi kesalahan saat memuat data.");
             }
         }
         
+        // Tambah tabungan
         async function tambahTabungan() {
             const input = document.getElementById('nominal');
             const noteInput = document.getElementById('note');
@@ -465,7 +606,7 @@
             };
             
             try {
-                await push(ref(database, 'transactions'), newTransaction);
+                await database.ref('transactions').push(newTransaction);
                 input.value = '';
                 noteInput.value = '';
             } catch (error) {
@@ -474,6 +615,7 @@
             }
         }
         
+        // Kurangi tabungan
         async function kurangiTabungan() {
             const input = document.getElementById('nominal');
             const noteInput = document.getElementById('note');
@@ -501,7 +643,7 @@
             };
             
             try {
-                await push(ref(database, 'transactions'), newTransaction);
+                await database.ref('transactions').push(newTransaction);
                 input.value = '';
                 noteInput.value = '';
             } catch (error) {
@@ -510,6 +652,7 @@
             }
         }
         
+        // Set target
         async function setTarget() {
             const input = document.getElementById('target');
             const newTarget = parseInt(input.value);
@@ -520,7 +663,7 @@
             }
             
             try {
-                await set(ref(database, 'target'), newTarget);
+                await database.ref('target').set(newTarget);
                 alert('Target tabungan diset: ' + formatRupiah(newTarget));
                 input.value = '';
             } catch (error) {
@@ -529,11 +672,12 @@
             }
         }
         
+        // Reset tabungan
         async function resetTabungan() {
             if (confirm('Apakah Anda yakin ingin mereset total tabungan ke 0?')) {
                 try {
-                    await set(ref(database, 'total'), 0);
-                    await remove(ref(database, 'transactions'));
+                    await database.ref('total').set(0);
+                    await database.ref('transactions').remove();
                 } catch (error) {
                     console.error("Error resetting savings:", error);
                     alert('Gagal mereset tabungan: ' + error.message);
@@ -541,10 +685,11 @@
             }
         }
         
+        // Reset riwayat
         async function resetRiwayat() {
             if (confirm('Apakah Anda yakin ingin menghapus semua riwayat transaksi?')) {
                 try {
-                    await remove(ref(database, 'transactions'));
+                    await database.ref('transactions').remove();
                 } catch (error) {
                     console.error("Error resetting transactions:", error);
                     alert('Gagal mereset riwayat: ' + error.message);
@@ -552,25 +697,8 @@
             }
         }
         
-        // Initialize
-        document.addEventListener('DOMContentLoaded', function() {
-            updateTime();
-            setInterval(updateTime, 60000);
-            
-            // Expose functions to global scope for buttons
-            window.tambahTabungan = tambahTabungan;
-            window.kurangiTabungan = kurangiTabungan;
-            window.setTarget = setTarget;
-            window.resetTabungan = resetTabungan;
-            window.resetRiwayat = resetRiwayat;
-            
-            loadData();
-            
-            // Deteksi perubahan koneksi
-            window.addEventListener('online', () => {
-                if (!dataLoaded) loadData();
-            });
-        });
+        // Initialize app when Firebase is ready
+        document.addEventListener('DOMContentLoaded', initApp);
     </script>
 </body>
     </html>
